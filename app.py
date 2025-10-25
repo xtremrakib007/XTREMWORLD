@@ -8,6 +8,7 @@ import os
 from io import BytesIO
 import hashlib
 import time
+import csv
 
 # Set page configuration
 st.set_page_config(
@@ -198,8 +199,8 @@ class UserManager:
                 else:
                     # Create default admin user
                     st.session_state.users = {
-                        'xtremrakib': {
-                            'password': UserManager.hash_password('Rakib009'),
+                        'admin': {
+                            'password': UserManager.hash_password('admin123'),
                             'role': 'admin',
                             'approved': True,
                             'created_at': datetime.now().isoformat()
@@ -210,8 +211,8 @@ class UserManager:
                 st.error(f"Error loading users: {e}")
                 # Create default admin user as fallback
                 st.session_state.users = {
-                    'xtremrakib': {
-                        'password': UserManager.hash_password('Rakib009'),
+                    'admin': {
+                        'password': UserManager.hash_password('admin123'),
                         'role': 'admin',
                         'approved': True,
                         'created_at': datetime.now().isoformat()
@@ -288,17 +289,26 @@ class DataManager:
         if 'admin_panel' not in st.session_state:
             st.session_state.admin_panel = False
             
-        if 'initialized' not in st.session_state:
-            st.session_state.initialized = True
+        # Initialize data if not exists
+        if 'store_data' not in st.session_state:
             st.session_state.store_data = DataManager.load_store_data()
+        if 'product_prices' not in st.session_state:
             st.session_state.product_prices = DataManager.load_prices()
+        if 'product_barcodes' not in st.session_state:
             st.session_state.product_barcodes = DataManager.load_barcodes()
+        if 'product_suppliers' not in st.session_state:
             st.session_state.product_suppliers = DataManager.load_suppliers()
+        if 'product_categories' not in st.session_state:
             st.session_state.product_categories = DataManager.load_categories()
+        if 'po_products' not in st.session_state:
             st.session_state.po_products = []
+        if 'po_quantities' not in st.session_state:
             st.session_state.po_quantities = []
+        if 'po_prices' not in st.session_state:
             st.session_state.po_prices = []
+        if 'saved_pos' not in st.session_state:
             st.session_state.saved_pos = DataManager.load_saved_pos()
+        if 'pending_changes' not in st.session_state:
             st.session_state.pending_changes = DataManager.load_pending_changes()
     
     @staticmethod
@@ -724,7 +734,7 @@ class StockManager:
     def add_product(self, product_name, stores, price=None, barcode=None, supplier="PINNACLE FOODS (M) SDN BHD", category=None):
         """Add new product to specified stores"""
         # Check if user is admin
-        if st.session_state.users[st.session_state.user]['role'] != 'admin':
+        if st.session_state.user not in st.session_state.users or st.session_state.users[st.session_state.user]['role'] != 'admin':
             # Add to pending changes for admin approval
             change_request = {
                 'type': 'add_product',
@@ -776,7 +786,7 @@ class StockManager:
     def add_store(self, store_name, initial_products=None):
         """Add new store with optional initial products"""
         # Check if user is admin
-        if st.session_state.users[st.session_state.user]['role'] != 'admin':
+        if st.session_state.user not in st.session_state.users or st.session_state.users[st.session_state.user]['role'] != 'admin':
             return False, "Only admin users can add stores"
         
         if store_name not in self.data:
@@ -784,13 +794,13 @@ class StockManager:
                 initial_products = []
             self.data[store_name] = initial_products
             self.save_all_data()
-            return True
-        return False
+            return True, f"Store '{store_name}' added successfully!"
+        return False, "Store already exists"
     
     def add_products_to_store(self, store_name, products):
         """Add multiple products to a specific store"""
         # Check if user is admin
-        if st.session_state.users[st.session_state.user]['role'] != 'admin':
+        if st.session_state.user not in st.session_state.users or st.session_state.users[st.session_state.user]['role'] != 'admin':
             return False, "Only admin users can add products to stores"
         
         if store_name in self.data:
@@ -798,13 +808,13 @@ class StockManager:
                 if product not in self.data[store_name]:
                     self.data[store_name].append(product)
             self.save_all_data()
-            return True
-        return False
+            return True, f"Added {len(products)} products to {store_name}"
+        return False, "Store not found"
     
     def delete_product(self, product_name):
         """Delete a product from all stores and product lists"""
         # Check if user is admin
-        if st.session_state.users[st.session_state.user]['role'] != 'admin':
+        if st.session_state.user not in st.session_state.users or st.session_state.users[st.session_state.user]['role'] != 'admin':
             return False, "Only admin users can delete products"
         
         # Remove from all stores
@@ -829,12 +839,12 @@ class StockManager:
         # Save all changes
         self.save_all_data()
         
-        return True
+        return True, f"Product '{product_name}' deleted successfully"
     
     def merge_products(self, product_to_keep, product_to_remove):
         """Merge two products - keep one and remove the other"""
         # Check if user is admin
-        if st.session_state.users[st.session_state.user]['role'] != 'admin':
+        if st.session_state.user not in st.session_state.users or st.session_state.users[st.session_state.user]['role'] != 'admin':
             return False, "Only admin users can merge products"
         
         if product_to_keep == product_to_remove:
@@ -880,7 +890,7 @@ class StockManager:
     def update_product(self, old_name, new_name, price, barcode, supplier, stores, category):
         """Update product details"""
         # Check if user is admin
-        if st.session_state.users[st.session_state.user]['role'] != 'admin':
+        if st.session_state.user not in st.session_state.users or st.session_state.users[st.session_state.user]['role'] != 'admin':
             return False, "Only admin users can update products"
         
         if old_name != new_name:
@@ -1052,7 +1062,7 @@ def show_admin_panel():
                 st.write(f"{role_badge} **{username}** {status_badge}")
                 st.write(f"Role: {user_data['role']} | Created: {user_data['created_at'][:10]}")
             with col2:
-                if username != 'xtremrakib':  # Don't allow deleting main admin
+                if username != 'admin':  # Don't allow deleting main admin
                     if st.button(f"Make Admin", key=f"admin_{username}"):
                         st.session_state.users[username]['role'] = 'admin'
                         UserManager.save_users()
@@ -1060,7 +1070,7 @@ def show_admin_panel():
                         time.sleep(1)
                         st.rerun()
             with col3:
-                if username != 'xtremrakib' and not user_data['approved']:
+                if username != 'admin' and not user_data['approved']:
                     if st.button(f"Approve", key=f"app_{username}"):
                         success, message = UserManager.approve_user(username)
                         if success:
@@ -1068,7 +1078,7 @@ def show_admin_panel():
                             time.sleep(1)
                             st.rerun()
             with col4:
-                if username != 'xtremrakib':  # Don't allow deleting main admin
+                if username != 'admin':  # Don't allow deleting main admin
                     if st.button(f"Delete", key=f"del_{username}"):
                         del st.session_state.users[username]
                         UserManager.save_users()
@@ -1136,163 +1146,6 @@ def show_admin_panel():
                 st.markdown("---")
         else:
             st.info("No pending changes awaiting approval")
-
-def main():
-    # Initialize user manager first
-    UserManager.initialize_users()
-    
-    # Check if user is logged in
-    if 'user' not in st.session_state or st.session_state.user is None:
-        show_login()
-        return
-    
-    # Check if user exists and is approved
-    if st.session_state.user not in st.session_state.users:
-        st.error("Your account has been deleted or is no longer active.")
-        st.session_state.user = None
-        time.sleep(2)
-        st.rerun()
-    
-    user_data = st.session_state.users[st.session_state.user]
-    if not user_data['approved']:
-        st.error("Your account is pending admin approval. Please contact administrator.")
-        st.session_state.user = None
-        time.sleep(2)
-        st.rerun()
-
-    # Initialize data manager
-    DataManager.initialize_session_state()
-
-    # Apply dark mode
-    apply_dark_mode()
-
-    # Initialize stock manager
-    try:
-        stock_manager = StockManager()
-    except Exception as e:
-        st.error(f"Error initializing stock manager: {e}")
-        st.info("Please try refreshing the page or contact administrator.")
-        return
-    
-    # Header with user info and dark mode toggle
-    col1, col2, col3 = st.columns([3, 1, 1])
-    with col1:
-        st.markdown('<h1 class="main-header">🏪 TY PASAR RAYA JIMAT SDN BHD</h1>', unsafe_allow_html=True)
-        st.markdown("### Stock Management & Purchase Order System")
-    with col2:
-        user_role = user_data['role']
-        role_badge = "👑 Admin" if user_role == 'admin' else "👤 User"
-        st.markdown(f'<div class="user-status">{role_badge} | {st.session_state.user}</div>', unsafe_allow_html=True)
-    with col3:
-        if st.button("🌙 Dark Mode" if not st.session_state.dark_mode else "☀️ Light Mode"):
-            st.session_state.dark_mode = not st.session_state.dark_mode
-            st.rerun()
-        if st.button("🚪 Logout"):
-            st.session_state.user = None
-            st.session_state.login_time = None
-            st.rerun()
-    
-    # Sidebar with Navigation
-    st.sidebar.title("Navigation")
-    
-    # Admin panel in sidebar for admin users
-    if user_role == 'admin':
-        if st.sidebar.button("👨‍💼 Admin Panel", use_container_width=True):
-            st.session_state.admin_panel = True
-        
-        if st.session_state.get('admin_panel', False):
-            show_admin_panel()
-            if st.sidebar.button("← Back to Main", use_container_width=True):
-                st.session_state.admin_panel = False
-            return
-    
-    app_mode = st.sidebar.selectbox(
-        "Choose a feature",
-        ["📊 Dashboard", "🔍 Check Stock", "📍 Find Locations", "🏪 Store Inventory", 
-         "📦 All Products", "➕ Add Products/Stores", "✏️ Edit/Merge Products", "💰 Manage Prices", 
-         "📋 Generate PO", "💾 Saved POs"]
-    )
-    
-    # Sales Representative Details in Sidebar
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📞 Sales Representative")
-    st.sidebar.markdown("""
-    <div class="sales-rep-card">
-        <strong>MD RAKIBUL ISLAM</strong><br>
-        📧 gts86@pinnaclefoods.com.my<br>
-        📱 0192699618
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Auto-fix products button
-    st.sidebar.markdown("---")
-    if st.sidebar.button("🔄 Auto-Fix Products", use_container_width=True):
-        auto_fix_products(stock_manager)
-    
-    # Update Prices button
-    st.sidebar.markdown("---")
-    if st.sidebar.button("💰 Update All Prices", use_container_width=True):
-        update_all_prices(stock_manager)
-    
-    # Data management buttons
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 💾 Data Management")
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        if st.button("💾 Save Data", use_container_width=True):
-            stock_manager.save_all_data()
-            st.sidebar.success("✅ All data saved!")
-    with col2:
-        if st.button("🔄 Reset Data", use_container_width=True):
-            if st.sidebar.checkbox("Confirm reset"):
-                # Clear all data files
-                for file in ['store_data.json', 'product_prices.json', 'product_barcodes.json', 
-                           'product_suppliers.json', 'product_categories.json', 'saved_pos.json', 'pending_changes.json']:
-                    try:
-                        if os.path.exists(file):
-                            os.remove(file)
-                    except:
-                        pass
-                st.session_state.initialized = False
-                st.sidebar.success("✅ Data reset! Refresh the page.")
-                time.sleep(2)
-                st.rerun()
-    
-    # Show pending approval message for non-admin users
-    if user_role != 'admin' and stock_manager.pending_changes:
-        pending_count = len([c for c in stock_manager.pending_changes if c['requested_by'] == st.session_state.user])
-        if pending_count > 0:
-            st.markdown(f'<div class="pending-approval">⚠️ You have {pending_count} change(s) pending admin approval</div>', unsafe_allow_html=True)
-    
-    # Main application logic based on selected mode
-    try:
-        if app_mode == "📊 Dashboard":
-            show_dashboard(stock_manager)
-        elif app_mode == "🔍 Check Stock":
-            check_stock(stock_manager)
-        elif app_mode == "📍 Find Locations":
-            find_locations(stock_manager)
-        elif app_mode == "🏪 Store Inventory":
-            store_inventory(stock_manager)
-        elif app_mode == "📦 All Products":
-            all_products(stock_manager)
-        elif app_mode == "➕ Add Products/Stores":
-            add_products_stores(stock_manager)
-        elif app_mode == "✏️ Edit/Merge Products":
-            edit_merge_products(stock_manager)
-        elif app_mode == "💰 Manage Prices":
-            manage_prices(stock_manager)
-        elif app_mode == "📋 Generate PO":
-            generate_po(stock_manager)
-        elif app_mode == "💾 Saved POs":
-            show_saved_pos(stock_manager)
-    except Exception as e:
-        st.error(f"Error in {app_mode}: {e}")
-        st.info("Please try refreshing the page or contact administrator.")
-    
-    # Footer
-    st.markdown("---")
-    st.markdown('<div class="footer">Deployed by "xtremrakib"</div>', unsafe_allow_html=True)
 
 def auto_fix_products(stock_manager):
     """Automatically fix product names and merges"""
@@ -1483,105 +1336,6 @@ def update_all_prices(stock_manager):
     stock_manager.save_all_data()
     st.success(f"✅ Updated prices for {updated_count} products!")
     st.rerun()
-
-def add_products_stores(stock_manager):
-    st.header("➕ Add Products & Stores")
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["Add Product", "Add Store", "Add Products to Store", "Manage Barcodes"])
-    
-    with tab1:
-        st.subheader("Add New Product")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            new_product_name = st.text_input("Product Name")
-            product_price = st.number_input("Price (RM)", min_value=0.0, value=3.0, step=0.1)
-        with col2:
-            barcode = st.text_input("Barcode (Optional)")
-            available_stores = st.multiselect("Available in Stores", list(stock_manager.data.keys()))
-            supplier = st.selectbox("Supplier", ["PINNACLE FOODS (M) SDN BHD", "PRAN", "BARBICAN", "DRINKO", "OTHER"])
-        
-        # Category selection
-        all_categories = sorted(list(set(stock_manager.product_categories.values())))
-        category = st.selectbox("Category", all_categories + ["Auto-detect from name"])
-        
-        if st.button("Add Product"):
-            if new_product_name and available_stores:
-                final_category = None if category == "Auto-detect from name" else category
-                success, message = stock_manager.add_product(new_product_name, available_stores, product_price, barcode, supplier, final_category)
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.info(message)  # This will show the approval pending message for non-admin users
-            else:
-                st.error("❌ Please enter product name and select at least one store.")
-    
-    with tab2:
-        st.subheader("Add New Store/Branch")
-        
-        new_store_name = st.text_input("Store Name")
-        
-        # Option to add initial products to the new store
-        st.subheader("Add Initial Products to New Store (Optional)")
-        available_products = stock_manager.all_products
-        initial_products = st.multiselect("Select products to add to the new store", available_products)
-        
-        if st.button("Add Store"):
-            if new_store_name:
-                success, message = stock_manager.add_store(new_store_name, initial_products)
-                if success:
-                    if initial_products:
-                        st.success(f"✅ Store '{new_store_name}' added successfully with {len(initial_products)} products!")
-                    else:
-                        st.success(f"✅ Store '{new_store_name}' added successfully!")
-                    st.rerun()
-                else:
-                    st.error(f"❌ {message}")
-            else:
-                st.error("❌ Please enter a store name.")
-    
-    with tab3:
-        st.subheader("Add Products to Existing Store")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            selected_store = st.selectbox("Select Store", list(stock_manager.data.keys()))
-        with col2:
-            # Show current products in the store
-            current_products = stock_manager.data.get(selected_store, [])
-            st.write(f"**Current products in {selected_store}:** {len(current_products)}")
-        
-        # Get products not currently in the store
-        all_products = stock_manager.all_products
-        store_products = stock_manager.data.get(selected_store, [])
-        available_products = [p for p in all_products if p not in store_products]
-        
-        products_to_add = st.multiselect("Select products to add", available_products)
-        
-        if st.button("Add Products to Store"):
-            if selected_store and products_to_add:
-                success, message = stock_manager.add_products_to_store(selected_store, products_to_add)
-                if success:
-                    st.success(f"✅ Added {len(products_to_add)} products to {selected_store}!")
-                    st.rerun()
-                else:
-                    st.error(f"❌ {message}")
-            else:
-                st.warning("⚠️ Please select a store and at least one product")
-    
-    with tab4:
-        st.subheader("Manage Product Barcodes")
-        
-        selected_product = st.selectbox("Select Product", stock_manager.all_products)
-        current_barcode = stock_manager.product_barcodes.get(selected_product, "")
-        new_barcode = st.text_input("Barcode", value=current_barcode)
-        
-        if st.button("Update Barcode"):
-            if selected_product and new_barcode:
-                stock_manager.product_barcodes[selected_product] = new_barcode
-                stock_manager.save_all_data()
-                st.success(f"✅ Barcode updated for '{selected_product}'")
 
 def show_dashboard(stock_manager):
     st.header("📊 Dashboard Overview")
@@ -1808,6 +1562,105 @@ def all_products(stock_manager):
                         <small>Barcode: {barcode}</small>
                     </div>
                     ''', unsafe_allow_html=True)
+
+def add_products_stores(stock_manager):
+    st.header("➕ Add Products & Stores")
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["Add Product", "Add Store", "Add Products to Store", "Manage Barcodes"])
+    
+    with tab1:
+        st.subheader("Add New Product")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            new_product_name = st.text_input("Product Name")
+            product_price = st.number_input("Price (RM)", min_value=0.0, value=3.0, step=0.1)
+        with col2:
+            barcode = st.text_input("Barcode (Optional)")
+            available_stores = st.multiselect("Available in Stores", list(stock_manager.data.keys()))
+            supplier = st.selectbox("Supplier", ["PINNACLE FOODS (M) SDN BHD", "PRAN", "BARBICAN", "DRINKO", "OTHER"])
+        
+        # Category selection
+        all_categories = sorted(list(set(stock_manager.product_categories.values())))
+        category = st.selectbox("Category", all_categories + ["Auto-detect from name"])
+        
+        if st.button("Add Product"):
+            if new_product_name and available_stores:
+                final_category = None if category == "Auto-detect from name" else category
+                success, message = stock_manager.add_product(new_product_name, available_stores, product_price, barcode, supplier, final_category)
+                if success:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.info(message)  # This will show the approval pending message for non-admin users
+            else:
+                st.error("❌ Please enter product name and select at least one store.")
+    
+    with tab2:
+        st.subheader("Add New Store/Branch")
+        
+        new_store_name = st.text_input("Store Name")
+        
+        # Option to add initial products to the new store
+        st.subheader("Add Initial Products to New Store (Optional)")
+        available_products = stock_manager.all_products
+        initial_products = st.multiselect("Select products to add to the new store", available_products)
+        
+        if st.button("Add Store"):
+            if new_store_name:
+                success, message = stock_manager.add_store(new_store_name, initial_products)
+                if success:
+                    if initial_products:
+                        st.success(f"✅ Store '{new_store_name}' added successfully with {len(initial_products)} products!")
+                    else:
+                        st.success(f"✅ Store '{new_store_name}' added successfully!")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {message}")
+            else:
+                st.error("❌ Please enter a store name.")
+    
+    with tab3:
+        st.subheader("Add Products to Existing Store")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_store = st.selectbox("Select Store", list(stock_manager.data.keys()))
+        with col2:
+            # Show current products in the store
+            current_products = stock_manager.data.get(selected_store, [])
+            st.write(f"**Current products in {selected_store}:** {len(current_products)}")
+        
+        # Get products not currently in the store
+        all_products = stock_manager.all_products
+        store_products = stock_manager.data.get(selected_store, [])
+        available_products = [p for p in all_products if p not in store_products]
+        
+        products_to_add = st.multiselect("Select products to add", available_products)
+        
+        if st.button("Add Products to Store"):
+            if selected_store and products_to_add:
+                success, message = stock_manager.add_products_to_store(selected_store, products_to_add)
+                if success:
+                    st.success(f"✅ Added {len(products_to_add)} products to {selected_store}!")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {message}")
+            else:
+                st.warning("⚠️ Please select a store and at least one product")
+    
+    with tab4:
+        st.subheader("Manage Product Barcodes")
+        
+        selected_product = st.selectbox("Select Product", stock_manager.all_products)
+        current_barcode = stock_manager.product_barcodes.get(selected_product, "")
+        new_barcode = st.text_input("Barcode", value=current_barcode)
+        
+        if st.button("Update Barcode"):
+            if selected_product and new_barcode:
+                stock_manager.product_barcodes[selected_product] = new_barcode
+                stock_manager.save_all_data()
+                st.success(f"✅ Barcode updated for '{selected_product}'")
 
 def edit_merge_products(stock_manager):
     st.header("✏️ Edit & Merge Products")
@@ -2188,87 +2041,6 @@ def generate_po(stock_manager):
     else:
         st.info("No products added to purchase order yet.")
 
-def show_saved_pos(stock_manager):
-    st.header("💾 Saved Purchase Orders")
-    
-    if not stock_manager.saved_pos:
-        st.info("No saved purchase orders found.")
-        return
-    
-    for po_number, po_data in sorted(stock_manager.saved_pos.items(), reverse=True):
-        with st.expander(f"📋 {po_number} - {po_data['timestamp'][:10]} - RM{po_data['total_amount']:.2f}"):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"**Supplier:** {po_data['supplier']}")
-                st.write(f"**Delivery Date:** {po_data['delivery_date'][:10]}")
-                st.write(f"**Created by:** {po_data['created_by']}")
-            with col2:
-                st.write(f"**Company:** {po_data['company_name']}")
-                st.write(f"**Total Amount:** RM{po_data['total_amount']:.2f}")
-                st.write(f"**Items:** {len(po_data['items'])}")
-            
-            st.subheader("PO Items")
-            
-            # Group items by category
-            categories = {}
-            for item in po_data['items']:
-                category = stock_manager.product_categories.get(item['product'], "Uncategorized")
-                if category not in categories:
-                    categories[category] = []
-                categories[category].append(item)
-            
-            for category, items in categories.items():
-                with st.expander(f"{category} ({len(items)} items)"):
-                    for item in items:
-                        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-                        with col1:
-                            st.write(item['product'])
-                        with col2:
-                            st.write(f"Qty: {item['quantity']}")
-                        with col3:
-                            st.write(f"Price: RM{item['price']:.2f}")
-                        with col4:
-                            st.write(f"Total: RM{item['total']:.2f}")
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                if st.button(f"📄 View/Print {po_number}", key=f"view_{po_number}"):
-                    # Regenerate the PO document
-                    products = [item['product'] for item in po_data['items']]
-                    quantities = [item['quantity'] for item in po_data['items']]
-                    prices = [item['price'] for item in po_data['items']]
-                    
-                    generate_po_document(
-                        stock_manager, products, quantities, prices,
-                        po_data['supplier'], 
-                        datetime.fromisoformat(po_data['delivery_date']),
-                        po_data['company_name'],
-                        po_data['delivery_address'],
-                        po_data['po_number']
-                    )
-            with col2:
-                if st.button(f"📥 Download {po_number}", key=f"download_{po_number}"):
-                    # Create download link
-                    products = [item['product'] for item in po_data['items']]
-                    quantities = [item['quantity'] for item in po_data['items']]
-                    prices = [item['price'] for item in po_data['items']]
-                    
-                    generate_po_download(
-                        stock_manager, products, quantities, prices,
-                        po_data['supplier'], 
-                        datetime.fromisoformat(po_data['delivery_date']),
-                        po_data['company_name'],
-                        po_data['delivery_address'],
-                        po_data['po_number']
-                    )
-            with col3:
-                if st.session_state.users[st.session_state.user]['role'] == 'admin':
-                    if st.button(f"🗑️ Delete {po_number}", key=f"delete_{po_number}"):
-                        del stock_manager.saved_pos[po_number]
-                        stock_manager.save_all_data()
-                        st.success(f"PO {po_number} deleted successfully!")
-                        st.rerun()
-
 def generate_po_document(stock_manager, products, quantities, prices, supplier, delivery_date, company_name, delivery_address, po_number=None):
     if po_number is None:
         po_number = f"PO-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -2426,7 +2198,242 @@ def generate_po_document(stock_manager, products, quantities, prices, supplier, 
     
     # Display the PO
     st.components.v1.html(po_html, height=800, scrolling=True)
+
+def show_saved_pos(stock_manager):
+    st.header("💾 Saved Purchase Orders")
     
-    # Download options
+    if not stock_manager.saved_pos:
+        st.info("No saved purchase orders found.")
+        return
+    
+    for po_number, po_data in sorted(stock_manager.saved_pos.items(), reverse=True):
+        with st.expander(f"📋 {po_number} - {po_data['timestamp'][:10]} - RM{po_data['total_amount']:.2f}"):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Supplier:** {po_data['supplier']}")
+                st.write(f"**Delivery Date:** {po_data['delivery_date'][:10]}")
+                st.write(f"**Created by:** {po_data['created_by']}")
+            with col2:
+                st.write(f"**Company:** {po_data['company_name']}")
+                st.write(f"**Total Amount:** RM{po_data['total_amount']:.2f}")
+                st.write(f"**Items:** {len(po_data['items'])}")
+            
+            st.subheader("PO Items")
+            
+            # Group items by category
+            categories = {}
+            for item in po_data['items']:
+                category = stock_manager.product_categories.get(item['product'], "Uncategorized")
+                if category not in categories:
+                    categories[category] = []
+                categories[category].append(item)
+            
+            for category, items in categories.items():
+                with st.expander(f"{category} ({len(items)} items)"):
+                    for item in items:
+                        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                        with col1:
+                            st.write(item['product'])
+                        with col2:
+                            st.write(f"Qty: {item['quantity']}")
+                        with col3:
+                            st.write(f"Price: RM{item['price']:.2f}")
+                        with col4:
+                            st.write(f"Total: RM{item['total']:.2f}")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button(f"📄 View/Print {po_number}", key=f"view_{po_number}"):
+                    # Regenerate the PO document
+                    products = [item['product'] for item in po_data['items']]
+                    quantities = [item['quantity'] for item in po_data['items']]
+                    prices = [item['price'] for item in po_data['items']]
+                    
+                    generate_po_document(
+                        stock_manager, products, quantities, prices,
+                        po_data['supplier'], 
+                        datetime.fromisoformat(po_data['delivery_date']),
+                        po_data['company_name'],
+                        po_data['delivery_address'],
+                        po_data['po_number']
+                    )
+            with col2:
+                # Create CSV download
+                csv_data = "Item,Product,Quantity,Unit Price (RM),Total (RM)\n"
+                for i, item in enumerate(po_data['items']):
+                    csv_data += f"{i+1},{item['product']},{item['quantity']},{item['price']},{item['total']}\n"
+                
+                st.download_button(
+                    label=f"📥 Download {po_number}",
+                    data=csv_data,
+                    file_name=f"{po_number}.csv",
+                    mime="text/csv",
+                    key=f"download_{po_number}"
+                )
+            with col3:
+                if st.session_state.users[st.session_state.user]['role'] == 'admin':
+                    if st.button(f"🗑️ Delete {po_number}", key=f"delete_{po_number}"):
+                        del stock_manager.saved_pos[po_number]
+                        stock_manager.save_all_data()
+                        st.success(f"PO {po_number} deleted successfully!")
+                        st.rerun()
+
+def main():
+    # Initialize user manager first
+    UserManager.initialize_users()
+    
+    # Check if user is logged in
+    if 'user' not in st.session_state or st.session_state.user is None:
+        show_login()
+        return
+    
+    # Check if user exists and is approved
+    if st.session_state.user not in st.session_state.users:
+        st.error("Your account has been deleted or is no longer active.")
+        st.session_state.user = None
+        time.sleep(2)
+        st.rerun()
+    
+    user_data = st.session_state.users[st.session_state.user]
+    if not user_data['approved']:
+        st.error("Your account is pending admin approval. Please contact administrator.")
+        st.session_state.user = None
+        time.sleep(2)
+        st.rerun()
+
+    # Initialize data manager
+    DataManager.initialize_session_state()
+
+    # Apply dark mode
+    apply_dark_mode()
+
+    # Initialize stock manager
+    try:
+        stock_manager = StockManager()
+    except Exception as e:
+        st.error(f"Error initializing stock manager: {e}")
+        st.info("Please try refreshing the page or contact administrator.")
+        return
+    
+    # Header with user info and dark mode toggle
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col1:
+        st.markdown('<h1 class="main-header">🏪 TY PASAR RAYA JIMAT SDN BHD</h1>', unsafe_allow_html=True)
+        st.markdown("### Stock Management & Purchase Order System")
+    with col2:
+        user_role = user_data['role']
+        role_badge = "👑 Admin" if user_role == 'admin' else "👤 User"
+        st.markdown(f'<div class="user-status">{role_badge} | {st.session_state.user}</div>', unsafe_allow_html=True)
+    with col3:
+        if st.button("🌙 Dark Mode" if not st.session_state.dark_mode else "☀️ Light Mode"):
+            st.session_state.dark_mode = not st.session_state.dark_mode
+            st.rerun()
+        if st.button("🚪 Logout"):
+            st.session_state.user = None
+            st.session_state.login_time = None
+            st.rerun()
+    
+    # Sidebar with Navigation
+    st.sidebar.title("Navigation")
+    
+    # Admin panel in sidebar for admin users
+    if user_role == 'admin':
+        if st.sidebar.button("👨‍💼 Admin Panel", use_container_width=True):
+            st.session_state.admin_panel = True
+        
+        if st.session_state.get('admin_panel', False):
+            show_admin_panel()
+            if st.sidebar.button("← Back to Main", use_container_width=True):
+                st.session_state.admin_panel = False
+            return
+    
+    app_mode = st.sidebar.selectbox(
+        "Choose a feature",
+        ["📊 Dashboard", "🔍 Check Stock", "📍 Find Locations", "🏪 Store Inventory", 
+         "📦 All Products", "➕ Add Products/Stores", "✏️ Edit/Merge Products", "💰 Manage Prices", 
+         "📋 Generate PO", "💾 Saved POs"]
+    )
+    
+    # Sales Representative Details in Sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📞 Sales Representative")
+    st.sidebar.markdown("""
+    <div class="sales-rep-card">
+        <strong>MD RAKIBUL ISLAM</strong><br>
+        📧 gts86@pinnaclefoods.com.my<br>
+        📱 0192699618
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Auto-fix products button
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 Auto-Fix Products", use_container_width=True):
+        auto_fix_products(stock_manager)
+    
+    # Update Prices button
+    st.sidebar.markdown("---")
+    if st.sidebar.button("💰 Update All Prices", use_container_width=True):
+        update_all_prices(stock_manager)
+    
+    # Data management buttons
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 💾 Data Management")
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("💾 Save Data", use_container_width=True):
+            stock_manager.save_all_data()
+            st.sidebar.success("✅ All data saved!")
+    with col2:
+        if st.button("🔄 Reset Data", use_container_width=True):
+            if st.sidebar.checkbox("Confirm reset"):
+                # Clear all data files
+                for file in ['store_data.json', 'product_prices.json', 'product_barcodes.json', 
+                           'product_suppliers.json', 'product_categories.json', 'saved_pos.json', 'pending_changes.json']:
+                    try:
+                        if os.path.exists(file):
+                            os.remove(file)
+                    except:
+                        pass
+                st.session_state.initialized = False
+                st.sidebar.success("✅ Data reset! Refresh the page.")
+                time.sleep(2)
+                st.rerun()
+    
+    # Show pending approval message for non-admin users
+    if user_role != 'admin' and stock_manager.pending_changes:
+        pending_count = len([c for c in stock_manager.pending_changes if c['requested_by'] == st.session_state.user])
+        if pending_count > 0:
+            st.markdown(f'<div class="pending-approval">⚠️ You have {pending_count} change(s) pending admin approval</div>', unsafe_allow_html=True)
+    
+    # Main application logic based on selected mode
+    try:
+        if app_mode == "📊 Dashboard":
+            show_dashboard(stock_manager)
+        elif app_mode == "🔍 Check Stock":
+            check_stock(stock_manager)
+        elif app_mode == "📍 Find Locations":
+            find_locations(stock_manager)
+        elif app_mode == "🏪 Store Inventory":
+            store_inventory(stock_manager)
+        elif app_mode == "📦 All Products":
+            all_products(stock_manager)
+        elif app_mode == "➕ Add Products/Stores":
+            add_products_stores(stock_manager)
+        elif app_mode == "✏️ Edit/Merge Products":
+            edit_merge_products(stock_manager)
+        elif app_mode == "💰 Manage Prices":
+            manage_prices(stock_manager)
+        elif app_mode == "📋 Generate PO":
+            generate_po(stock_manager)
+        elif app_mode == "💾 Saved POs":
+            show_saved_pos(stock_manager)
+    except Exception as e:
+        st.error(f"Error in {app_mode}: {e}")
+        st.info("Please try refreshing the page or contact administrator.")
+    
+    # Footer
     st.markdown("---")
-    col1, col2 = st
+    st.markdown('<div class="footer">Deployed by "xtremrakib"</div>', unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()
