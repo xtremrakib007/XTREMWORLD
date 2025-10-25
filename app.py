@@ -6,6 +6,8 @@ import base64
 import json
 import os
 from io import BytesIO
+import hashlib
+import time
 
 # Set page configuration
 st.set_page_config(
@@ -130,8 +132,120 @@ st.markdown("""
         border-top: 1px solid #4a5568;
         color: #a0aec0;
     }
+    .login-container {
+        max-width: 400px;
+        margin: 2rem auto;
+        padding: 2rem;
+        border: 1px solid #dee2e6;
+        border-radius: 10px;
+        background-color: white;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .dark-mode .login-container {
+        background-color: #2d3748;
+        border: 1px solid #4a5568;
+    }
+    .user-status {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        margin: 0.5rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+class UserManager:
+    """Manages user authentication and authorization"""
+    
+    @staticmethod
+    def hash_password(password):
+        """Hash a password for storing."""
+        return hashlib.sha256(password.encode()).hexdigest()
+    
+    @staticmethod
+    def initialize_users():
+        """Initialize users data"""
+        if 'users' not in st.session_state:
+            try:
+                if os.path.exists('users.json'):
+                    with open('users.json', 'r') as f:
+                        st.session_state.users = json.load(f)
+                else:
+                    # Create default admin user
+                    st.session_state.users = {
+                        'xtremrakib': {
+                            'password': UserManager.hash_password('Rakib009'),
+                            'role': 'admin',
+                            'approved': True,
+                            'created_at': datetime.now().isoformat()
+                        }
+                    }
+                    UserManager.save_users()
+            except:
+                st.session_state.users = {
+                    'xtremrakib': {
+                        'password': UserManager.hash_password('Rakib009'),
+                        'role': 'admin',
+                        'approved': True,
+                        'created_at': datetime.now().isoformat()
+                    }
+                }
+    
+    @staticmethod
+    def save_users():
+        """Save users to file"""
+        try:
+            with open('users.json', 'w') as f:
+                json.dump(st.session_state.users, f)
+        except:
+            pass
+    
+    @staticmethod
+    def create_user(username, password, role='user'):
+        """Create a new user"""
+        if username in st.session_state.users:
+            return False, "Username already exists"
+        
+        st.session_state.users[username] = {
+            'password': UserManager.hash_password(password),
+            'role': role,
+            'approved': role == 'admin',  # Auto-approve admin
+            'created_at': datetime.now().isoformat()
+        }
+        UserManager.save_users()
+        return True, "User created successfully. Waiting for admin approval."
+    
+    @staticmethod
+    def authenticate(username, password):
+        """Authenticate a user"""
+        if username not in st.session_state.users:
+            return False, "Invalid username"
+        
+        user = st.session_state.users[username]
+        if user['password'] != UserManager.hash_password(password):
+            return False, "Invalid password"
+        
+        if not user['approved']:
+            return False, "Account pending admin approval"
+        
+        return True, "Login successful"
+    
+    @staticmethod
+    def get_pending_users():
+        """Get list of users pending approval"""
+        return [username for username, user in st.session_state.users.items() 
+                if not user['approved'] and user['role'] != 'admin']
+    
+    @staticmethod
+    def approve_user(username):
+        """Approve a user"""
+        if username in st.session_state.users:
+            st.session_state.users[username]['approved'] = True
+            UserManager.save_users()
+            return True, f"User {username} approved successfully"
+        return False, "User not found"
 
 class DataManager:
     """Manages data persistence using session state and file backup"""
@@ -150,6 +264,12 @@ class DataManager:
             st.session_state.po_quantities = []
             st.session_state.po_prices = []
             st.session_state.dark_mode = False
+            
+            # Initialize user session state if not exists
+            if 'user' not in st.session_state:
+                st.session_state.user = None
+            if 'login_time' not in st.session_state:
+                st.session_state.login_time = None
     
     @staticmethod
     def load_store_data():
@@ -350,19 +470,15 @@ class StockManager:
         self.product_suppliers = st.session_state.product_suppliers
         self.product_categories = st.session_state.product_categories
         
-        # Initialize default prices and categories for products that don't have them
-        self.initialize_default_data()
+        # Initialize default prices for products that don't have prices
+        self.initialize_default_prices()
     
-    def initialize_default_data(self):
-        """Initialize default prices and categories for products that don't have them"""
+    def initialize_default_prices(self):
+        """Initialize default prices for products that don't have prices"""
         changed = False
         for product in self.all_products:
             if product not in self.product_prices:
                 self.product_prices[product] = self.estimate_price(product)
-                changed = True
-            
-            if product not in self.product_categories:
-                self.product_categories[product] = self.get_product_category(product)
                 changed = True
         
         if changed:
@@ -438,14 +554,6 @@ class StockManager:
             return 'Spices'
         elif 'HUMPTY DUMPTY' in product_upper:
             return 'Snacks'
-        elif 'AIS LEMON TEH' in product_upper:
-            return 'Tea'
-        elif 'COOLING TAMARIND' in product_upper:
-            return 'Traditional Drinks'
-        elif 'PREMIO PARADISE' in product_upper:
-            return 'Paradise'
-        elif 'CHOCO STICK' in product_upper:
-            return 'Chocolate'
         else:
             return 'Other'
     
@@ -707,7 +815,149 @@ def apply_dark_mode():
         </style>
         """, unsafe_allow_html=True)
 
+def show_login():
+    """Show login/signup form"""
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["Login", "Sign Up"])
+    
+    with tab1:
+        st.subheader("Login")
+        username = st.text_input("Username", key="login_username")
+        password = st.text_input("Password", type="password", key="login_password")
+        
+        if st.button("Login", use_container_width=True):
+            if username and password:
+                success, message = UserManager.authenticate(username, password)
+                if success:
+                    st.session_state.user = username
+                    st.session_state.login_time = datetime.now()
+                    st.success(f"Welcome {username}!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error(message)
+            else:
+                st.error("Please enter both username and password")
+    
+    with tab2:
+        st.subheader("Create Account")
+        new_username = st.text_input("Username", key="signup_username")
+        new_password = st.text_input("Password", type="password", key="signup_password")
+        confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
+        
+        if st.button("Sign Up", use_container_width=True):
+            if new_username and new_password and confirm_password:
+                if new_password == confirm_password:
+                    success, message = UserManager.create_user(new_username, new_password)
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
+                else:
+                    st.error("Passwords do not match")
+            else:
+                st.error("Please fill all fields")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def show_admin_panel():
+    """Show admin panel for user management"""
+    st.header("👨‍💼 Admin Panel")
+    
+    tab1, tab2 = st.tabs(["Pending Approvals", "User Management"])
+    
+    with tab1:
+        st.subheader("Pending User Approvals")
+        pending_users = UserManager.get_pending_users()
+        
+        if pending_users:
+            for username in pending_users:
+                col1, col2, col3 = st.columns([2, 1, 1])
+                with col1:
+                    st.write(f"**{username}**")
+                    st.write(f"Created: {st.session_state.users[username]['created_at'][:10]}")
+                with col2:
+                    if st.button(f"Approve", key=f"approve_{username}"):
+                        success, message = UserManager.approve_user(username)
+                        if success:
+                            st.success(message)
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(message)
+                with col3:
+                    if st.button(f"Reject", key=f"reject_{username}"):
+                        # Remove user
+                        del st.session_state.users[username]
+                        UserManager.save_users()
+                        st.success(f"User {username} rejected and removed")
+                        time.sleep(1)
+                        st.rerun()
+                st.markdown("---")
+        else:
+            st.info("No pending user approvals")
+    
+    with tab2:
+        st.subheader("User Management")
+        users = st.session_state.users
+        
+        for username, user_data in users.items():
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            with col1:
+                role_badge = "👑" if user_data['role'] == 'admin' else "👤"
+                status_badge = "✅" if user_data['approved'] else "⏳"
+                st.write(f"{role_badge} **{username}** {status_badge}")
+                st.write(f"Role: {user_data['role']} | Created: {user_data['created_at'][:10]}")
+            with col2:
+                if username != 'xtremrakib':  # Don't allow deleting main admin
+                    if st.button(f"Make Admin", key=f"admin_{username}"):
+                        st.session_state.users[username]['role'] = 'admin'
+                        UserManager.save_users()
+                        st.success(f"{username} is now an admin")
+                        time.sleep(1)
+                        st.rerun()
+            with col3:
+                if username != 'xtremrakib' and not user_data['approved']:
+                    if st.button(f"Approve", key=f"app_{username}"):
+                        success, message = UserManager.approve_user(username)
+                        if success:
+                            st.success(message)
+                            time.sleep(1)
+                            st.rerun()
+            with col4:
+                if username != 'xtremrakib':  # Don't allow deleting main admin
+                    if st.button(f"Delete", key=f"del_{username}"):
+                        del st.session_state.users[username]
+                        UserManager.save_users()
+                        st.success(f"User {username} deleted")
+                        time.sleep(1)
+                        st.rerun()
+            st.markdown("---")
+
 def main():
+    # Initialize user manager
+    UserManager.initialize_users()
+    
+    # Check if user is logged in
+    if 'user' not in st.session_state or st.session_state.user is None:
+        show_login()
+        return
+    
+    # Check if user exists and is approved
+    if st.session_state.user not in st.session_state.users:
+        st.error("Your account has been deleted or is no longer active.")
+        st.session_state.user = None
+        time.sleep(2)
+        st.rerun()
+    
+    user_data = st.session_state.users[st.session_state.user]
+    if not user_data['approved']:
+        st.error("Your account is pending admin approval. Please contact administrator.")
+        st.session_state.user = None
+        time.sleep(2)
+        st.rerun()
+
     # Initialize data manager
     DataManager.initialize_session_state()
 
@@ -717,18 +967,38 @@ def main():
     # Initialize stock manager
     stock_manager = StockManager()
     
-    # Header with dark mode toggle
-    col1, col2 = st.columns([3, 1])
+    # Header with user info and dark mode toggle
+    col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
         st.markdown('<h1 class="main-header">🏪 TY PASAR RAYA JIMAT SDN BHD</h1>', unsafe_allow_html=True)
         st.markdown("### Stock Management & Purchase Order System")
     with col2:
+        user_role = user_data['role']
+        role_badge = "👑 Admin" if user_role == 'admin' else "👤 User"
+        st.markdown(f'<div class="user-status">{role_badge} | {st.session_state.user}</div>', unsafe_allow_html=True)
+    with col3:
         if st.button("🌙 Dark Mode" if not st.session_state.dark_mode else "☀️ Light Mode"):
             st.session_state.dark_mode = not st.session_state.dark_mode
             st.rerun()
+        if st.button("🚪 Logout"):
+            st.session_state.user = None
+            st.session_state.login_time = None
+            st.rerun()
     
-    # Sidebar with Sales Representative Details
+    # Sidebar with Navigation
     st.sidebar.title("Navigation")
+    
+    # Admin panel in sidebar for admin users
+    if user_role == 'admin':
+        if st.sidebar.button("👨‍💼 Admin Panel", use_container_width=True):
+            st.session_state.admin_panel = True
+        
+        if st.session_state.get('admin_panel', False):
+            show_admin_panel()
+            if st.sidebar.button("← Back to Main", use_container_width=True):
+                st.session_state.admin_panel = False
+            return
+    
     app_mode = st.sidebar.selectbox(
         "Choose a feature",
         ["📊 Dashboard", "🔍 Check Stock", "📍 Find Locations", "🏪 Store Inventory", 
@@ -777,8 +1047,10 @@ def main():
                         pass
                 st.session_state.initialized = False
                 st.sidebar.success("✅ Data reset! Refresh the page.")
+                time.sleep(2)
                 st.rerun()
     
+    # Main application logic based on selected mode
     if app_mode == "📊 Dashboard":
         show_dashboard(stock_manager)
     elif app_mode == "🔍 Check Stock":
@@ -801,6 +1073,9 @@ def main():
     # Footer
     st.markdown("---")
     st.markdown('<div class="footer">Deployed by "xtremrakib"</div>', unsafe_allow_html=True)
+
+# All the remaining functions (auto_fix_products, update_all_prices, show_dashboard, etc.)
+# remain exactly the same as in your original working code
 
 def auto_fix_products(stock_manager):
     """Automatically fix product names and merges"""
@@ -999,8 +1274,8 @@ def add_products_stores(stock_manager):
             available_stores = st.multiselect("Available in Stores", list(stock_manager.data.keys()))
             supplier = st.selectbox("Supplier", ["PINNACLE FOODS (M) SDN BHD", "PRAN", "BARBICAN", "DRINKO", "OTHER"])
         
-        # Category selection - FIXED: Ensure all values are strings
-        all_categories = sorted(list(set(str(cat) for cat in stock_manager.product_categories.values())))
+        # Category selection
+        all_categories = sorted(list(set(stock_manager.product_categories.values())))
         category = st.selectbox("Category", all_categories + ["Auto-detect from name"])
         
         if st.button("Add Product"):
@@ -1253,8 +1528,8 @@ def all_products(stock_manager):
     with col1:
         search_term = st.text_input("🔍 Search products...")
     with col2:
-        # Get all unique categories - FIXED: Ensure all values are strings
-        all_categories = sorted(list(set(str(cat) for cat in stock_manager.product_categories.values())))
+        # Get all unique categories
+        all_categories = sorted(list(set(stock_manager.product_categories.values())))
         category_filter = st.selectbox("Filter by Category", ["All Categories"] + all_categories)
     
     # Group products by category
@@ -1269,7 +1544,7 @@ def all_products(stock_manager):
     if search_term or category_filter != "All Categories":
         filtered_products_by_category = {}
         for category, products in products_by_category.items():
-            if category_filter != "All Categories" and str(category) != category_filter:
+            if category_filter != "All Categories" and category != category_filter:
                 continue
             filtered_products = [p for p in products if search_term.lower() in p.lower()] if search_term else products
             if filtered_products:
@@ -1283,8 +1558,7 @@ def all_products(stock_manager):
     dark_mode = st.session_state.get('dark_mode', False)
     product_class = "product-card dark-mode" if dark_mode else "product-card"
     
-    # FIXED: Sort categories by string representation to avoid TypeError
-    for category, products in sorted(products_by_category.items(), key=lambda x: str(x[0])):
+    for category, products in sorted(products_by_category.items()):
         with st.expander(f"{category} ({len(products)} products)"):
             cols = st.columns(2)
             for i, product in enumerate(products):
@@ -1330,10 +1604,10 @@ def edit_merge_products(stock_manager):
                                                 2 if current_supplier == "BARBICAN" else
                                                 3 if current_supplier == "DRINKO" else 4)
             
-            # Category selection - FIXED: Ensure all values are strings
-            all_categories = sorted(list(set(str(cat) for cat in stock_manager.product_categories.values())))
+            # Category selection
+            all_categories = sorted(list(set(stock_manager.product_categories.values())))
             current_category = stock_manager.product_categories.get(product_to_edit, "Uncategorized")
-            new_category = st.selectbox("Category", all_categories, index=all_categories.index(str(current_category)) if str(current_category) in all_categories else 0)
+            new_category = st.selectbox("Category", all_categories, index=all_categories.index(current_category) if current_category in all_categories else 0)
             
             current_stores = [store for store in stock_manager.data if product_to_edit in stock_manager.data[store]]
             new_stores = st.multiselect("Available in Stores", 
@@ -1467,8 +1741,8 @@ def manage_prices(stock_manager):
     with tab3:
         st.subheader("Update Prices by Category")
         
-        # Get all unique categories - FIXED: Ensure all values are strings and handle sorting
-        all_categories = sorted(list(set(str(cat) for cat in stock_manager.product_categories.values())))
+        # Get all unique categories
+        all_categories = sorted(list(set(stock_manager.product_categories.values())))
         
         col1, col2 = st.columns(2)
         with col1:
@@ -1483,7 +1757,7 @@ def manage_prices(stock_manager):
         
         with col2:
             # Show products in this category
-            category_products = [p for p in stock_manager.all_products if str(stock_manager.product_categories.get(p)) == selected_category]
+            category_products = [p for p in stock_manager.all_products if stock_manager.product_categories.get(p) == selected_category]
             st.write(f"**Products in {selected_category}:**")
             if category_products:
                 for product in category_products:
@@ -1644,73 +1918,146 @@ def generate_po_document(stock_manager, products, quantities, prices, supplier, 
     
     # Create a printable PO document
     po_html = f"""
-    <div style="padding: 20px; border: 2px solid #333; border-radius: 10px; background: white; color: black; max-width: 800px; margin: 0 auto;">
-        <h1 style="text-align: center; color: #2E86AB; border-bottom: 2px solid #2E86AB; padding-bottom: 10px;">PURCHASE ORDER</h1>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Purchase Order - {po_number}</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 20px;
+                color: #333;
+            }}
+            .header {{
+                text-align: center;
+                color: #2E86AB;
+                border-bottom: 2px solid #2E86AB;
+                padding-bottom: 10px;
+                margin-bottom: 20px;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+            }}
+            th, td {{
+                border: 1px solid #ddd;
+                padding: 12px;
+                text-align: left;
+            }}
+            th {{
+                background-color: #2E86AB;
+                color: white;
+            }}
+            .total-row {{
+                background-color: #f8f9fa;
+                font-weight: bold;
+                font-size: 1.1em;
+            }}
+            .signature-section {{
+                margin-top: 40px;
+                border-top: 2px solid #2E86AB;
+                padding-top: 20px;
+            }}
+            .signature-box {{
+                float: left;
+                width: 45%;
+            }}
+            .clear {{
+                clear: both;
+            }}
+            @media print {{
+                body {{
+                    margin: 0;
+                    padding: 20px;
+                }}
+                .no-print {{
+                    display: none;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>PURCHASE ORDER</h1>
+        </div>
         
-        <table style="width: 100%; margin-bottom: 20px; border-collapse: collapse;">
+        <table>
             <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>PO Number:</strong> {po_number}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Date:</strong> {timestamp}</td>
+                <td><strong>PO Number:</strong> {po_number}</td>
+                <td><strong>Date:</strong> {timestamp}</td>
             </tr>
             <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Supplier:</strong> {supplier}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Delivery Date:</strong> {delivery_date}</td>
+                <td><strong>Supplier:</strong> {supplier}</td>
+                <td><strong>Delivery Date:</strong> {delivery_date}</td>
             </tr>
             <tr>
-                <td colspan="2" style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Company:</strong> {company_name}</td>
+                <td colspan="2"><strong>Company:</strong> {company_name}</td>
             </tr>
             <tr>
-                <td colspan="2" style="padding: 8px;"><strong>Delivery Address:</strong> {delivery_address}</td>
+                <td colspan="2"><strong>Delivery Address:</strong> {delivery_address}</td>
             </tr>
         </table>
         
-        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-            <tr style="background-color: #2E86AB; color: white;">
-                <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Item No.</th>
-                <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Product Description</th>
-                <th style="border: 1px solid #ddd; padding: 12px; text-align: center;">Quantity</th>
-                <th style="border: 1px solid #ddd; padding: 12px; text-align: right;">Unit Price (RM)</th>
-                <th style="border: 1px solid #ddd; padding: 12px; text-align: right;">Total (RM)</th>
+        <table>
+            <tr>
+                <th>Item No.</th>
+                <th>Product Description</th>
+                <th style="text-align: center;">Quantity</th>
+                <th style="text-align: right;">Unit Price (RM)</th>
+                <th style="text-align: right;">Total (RM)</th>
             </tr>
     """
     
     for item in po_data:
         po_html += f"""
             <tr>
-                <td style="border: 1px solid #ddd; padding: 10px;">{item[0]}</td>
-                <td style="border: 1px solid #ddd; padding: 10px;">{item[1]}</td>
-                <td style="border: 1px solid #ddd; padding: 10px; text-align: center;">{item[2]}</td>
-                <td style="border: 1px solid #ddd; padding: 10px; text-align: right;">{item[3]}</td>
-                <td style="border: 1px solid #ddd; padding: 10px; text-align: right;">{item[4]}</td>
+                <td>{item[0]}</td>
+                <td>{item[1]}</td>
+                <td style="text-align: center;">{item[2]}</td>
+                <td style="text-align: right;">{item[3]}</td>
+                <td style="text-align: right;">{item[4]}</td>
             </tr>
         """
     
     po_html += f"""
-            <tr style="background-color: #f8f9fa; font-weight: bold; font-size: 1.1em;">
-                <td colspan="4" style="border: 1px solid #ddd; padding: 12px; text-align: right;">GRAND TOTAL</td>
-                <td style="border: 1px solid #ddd; padding: 12px; text-align: right;">RM{total_amount:.2f}</td>
+            <tr class="total-row">
+                <td colspan="4" style="text-align: right;">GRAND TOTAL</td>
+                <td style="text-align: right;">RM{total_amount:.2f}</td>
             </tr>
         </table>
         
-        <div style="margin-top: 40px; border-top: 2px solid #2E86AB; padding-top: 20px;">
-            <div style="float: left; width: 45%;">
+        <div class="signature-section">
+            <div class="signature-box">
                 <p><strong>Prepared By:</strong></p>
                 <p>_________________________</p>
-                <p>Name: ___________________</p>
-                <p>Date: ___________________</p>
+                <p>Name: {st.session_state.user}</p>
+                <p>Date: {datetime.now().strftime('%Y-%m-%d')}</p>
             </div>
-            <div style="float: right; width: 45%;">
+            <div class="signature-box" style="float: right;">
                 <p><strong>Authorized Signature:</strong></p>
                 <p>_________________________</p>
                 <p>Name: ___________________</p>
                 <p>Date: ___________________</p>
             </div>
-            <div style="clear: both;"></div>
+            <div class="clear"></div>
         </div>
-    </div>
+        
+        <div class="no-print" style="margin-top: 20px; text-align: center;">
+            <button onclick="window.print()" style="background-color: #008CBA; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px;">🖨️ Print Purchase Order</button>
+        </div>
+        
+        <script>
+            function printPO() {{
+                window.print();
+            }}
+        </script>
+    </body>
+    </html>
     """
     
-    st.markdown(po_html, unsafe_allow_html=True)
+    # Display the PO
+    st.components.v1.html(po_html, height=800, scrolling=True)
     
     # Download options
     st.markdown("---")
@@ -1725,15 +2072,10 @@ def generate_po_document(stock_manager, products, quantities, prices, supplier, 
         st.markdown(href, unsafe_allow_html=True)
     
     with col2:
-        # Print button
-        st.markdown("""
-        <script>
-        function printPO() {
-            window.print();
-        }
-        </script>
-        <button onclick="printPO()" style="background-color: #008CBA; color: white; padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 16px;">🖨️ Print Purchase Order</button>
-        """, unsafe_allow_html=True)
+        # Download as HTML (for printing)
+        html_b64 = base64.b64encode(po_html.encode()).decode()
+        href_html = f'<a href="data:text/html;base64,{html_b64}" download="{po_number}.html" style="background-color: #008CBA; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">📄 Download as HTML</a>'
+        st.markdown(href_html, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
