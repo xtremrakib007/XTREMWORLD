@@ -350,15 +350,19 @@ class StockManager:
         self.product_suppliers = st.session_state.product_suppliers
         self.product_categories = st.session_state.product_categories
         
-        # Initialize default prices for products that don't have prices
-        self.initialize_default_prices()
+        # Initialize default prices and categories for products that don't have them
+        self.initialize_default_data()
     
-    def initialize_default_prices(self):
-        """Initialize default prices for products that don't have prices"""
+    def initialize_default_data(self):
+        """Initialize default prices and categories for products that don't have them"""
         changed = False
         for product in self.all_products:
             if product not in self.product_prices:
                 self.product_prices[product] = self.estimate_price(product)
+                changed = True
+            
+            if product not in self.product_categories:
+                self.product_categories[product] = self.get_product_category(product)
                 changed = True
         
         if changed:
@@ -434,6 +438,14 @@ class StockManager:
             return 'Spices'
         elif 'HUMPTY DUMPTY' in product_upper:
             return 'Snacks'
+        elif 'AIS LEMON TEH' in product_upper:
+            return 'Tea'
+        elif 'COOLING TAMARIND' in product_upper:
+            return 'Traditional Drinks'
+        elif 'PREMIO PARADISE' in product_upper:
+            return 'Paradise'
+        elif 'CHOCO STICK' in product_upper:
+            return 'Chocolate'
         else:
             return 'Other'
     
@@ -1063,9 +1075,6 @@ def add_products_stores(stock_manager):
                 stock_manager.product_barcodes[selected_product] = new_barcode
                 stock_manager.save_all_data()
                 st.success(f"✅ Barcode updated for '{selected_product}'")
-
-# [Rest of the functions remain the same - show_dashboard, check_stock, find_locations, store_inventory, 
-# all_products, edit_merge_products, manage_prices, generate_po, generate_po_document]
 
 def show_dashboard(stock_manager):
     st.header("📊 Dashboard Overview")
