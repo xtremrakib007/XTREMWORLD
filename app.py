@@ -1973,11 +1973,12 @@ def update_all_prices(stock_manager):
         'PRAN PUFFED RICE 400G': 2.75,
         
         # Other products
-        'PRAN SWEETENED CREAMER 500GM EASY OPEN': 2.92,
-        'PRAN CHOCO STICK': 0.70,
-        'PRAN SWEETENED CREAMER 500GM': 2.75,
-        'BOMBAY BRIYANI MASALA': 2.92,
-        'PRAN POTATA BISCUITS 100GM': 1.60,
+        'PRAN CREAMER 500GM': 5.00,
+        'PRAN CREAMER 500GM EASY OPEN': 5.00,
+        'PRAN CHOCO STICK': 3.00,
+        'PRAN SWEETENED CREAMER 500GM': 5.00,
+        'BOMBAY BRIYANI MASALA': 4.50,
+        'PRAN POTATA BISCUITS 100GM': 3.50,
     }
     
     updated_count = 0
