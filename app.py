@@ -999,8 +999,8 @@ def add_products_stores(stock_manager):
             available_stores = st.multiselect("Available in Stores", list(stock_manager.data.keys()))
             supplier = st.selectbox("Supplier", ["PINNACLE FOODS (M) SDN BHD", "PRAN", "BARBICAN", "DRINKO", "OTHER"])
         
-        # Category selection
-        all_categories = sorted(list(set(stock_manager.product_categories.values())))
+        # Category selection - FIXED: Ensure all values are strings
+        all_categories = sorted(list(set(str(cat) for cat in stock_manager.product_categories.values())))
         category = st.selectbox("Category", all_categories + ["Auto-detect from name"])
         
         if st.button("Add Product"):
@@ -1253,8 +1253,8 @@ def all_products(stock_manager):
     with col1:
         search_term = st.text_input("🔍 Search products...")
     with col2:
-        # Get all unique categories
-        all_categories = sorted(list(set(stock_manager.product_categories.values())))
+        # Get all unique categories - FIXED: Ensure all values are strings
+        all_categories = sorted(list(set(str(cat) for cat in stock_manager.product_categories.values())))
         category_filter = st.selectbox("Filter by Category", ["All Categories"] + all_categories)
     
     # Group products by category
@@ -1269,7 +1269,7 @@ def all_products(stock_manager):
     if search_term or category_filter != "All Categories":
         filtered_products_by_category = {}
         for category, products in products_by_category.items():
-            if category_filter != "All Categories" and category != category_filter:
+            if category_filter != "All Categories" and str(category) != category_filter:
                 continue
             filtered_products = [p for p in products if search_term.lower() in p.lower()] if search_term else products
             if filtered_products:
@@ -1283,7 +1283,8 @@ def all_products(stock_manager):
     dark_mode = st.session_state.get('dark_mode', False)
     product_class = "product-card dark-mode" if dark_mode else "product-card"
     
-    for category, products in sorted(products_by_category.items()):
+    # FIXED: Sort categories by string representation to avoid TypeError
+    for category, products in sorted(products_by_category.items(), key=lambda x: str(x[0])):
         with st.expander(f"{category} ({len(products)} products)"):
             cols = st.columns(2)
             for i, product in enumerate(products):
@@ -1329,10 +1330,10 @@ def edit_merge_products(stock_manager):
                                                 2 if current_supplier == "BARBICAN" else
                                                 3 if current_supplier == "DRINKO" else 4)
             
-            # Category selection
-            all_categories = sorted(list(set(stock_manager.product_categories.values())))
+            # Category selection - FIXED: Ensure all values are strings
+            all_categories = sorted(list(set(str(cat) for cat in stock_manager.product_categories.values())))
             current_category = stock_manager.product_categories.get(product_to_edit, "Uncategorized")
-            new_category = st.selectbox("Category", all_categories, index=all_categories.index(current_category) if current_category in all_categories else 0)
+            new_category = st.selectbox("Category", all_categories, index=all_categories.index(str(current_category)) if str(current_category) in all_categories else 0)
             
             current_stores = [store for store in stock_manager.data if product_to_edit in stock_manager.data[store]]
             new_stores = st.multiselect("Available in Stores", 
@@ -1466,8 +1467,8 @@ def manage_prices(stock_manager):
     with tab3:
         st.subheader("Update Prices by Category")
         
-        # Get all unique categories
-        all_categories = sorted(list(set(stock_manager.product_categories.values())))
+        # Get all unique categories - FIXED: Ensure all values are strings and handle sorting
+        all_categories = sorted(list(set(str(cat) for cat in stock_manager.product_categories.values())))
         
         col1, col2 = st.columns(2)
         with col1:
@@ -1482,7 +1483,7 @@ def manage_prices(stock_manager):
         
         with col2:
             # Show products in this category
-            category_products = [p for p in stock_manager.all_products if stock_manager.product_categories.get(p) == selected_category]
+            category_products = [p for p in stock_manager.all_products if str(stock_manager.product_categories.get(p)) == selected_category]
             st.write(f"**Products in {selected_category}:**")
             if category_products:
                 for product in category_products:
