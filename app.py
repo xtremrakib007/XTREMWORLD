@@ -548,10 +548,22 @@ class StockManager:
         # Save all changes
         self.save_all_data()
     
-    def add_store(self, store_name):
-        """Add new store"""
+    def add_store(self, store_name, initial_products=None):
+        """Add new store with optional initial products"""
         if store_name not in self.data:
-            self.data[store_name] = []
+            if initial_products is None:
+                initial_products = []
+            self.data[store_name] = initial_products
+            self.save_all_data()
+            return True
+        return False
+    
+    def add_products_to_store(self, store_name, products):
+        """Add multiple products to a specific store"""
+        if store_name in self.data:
+            for product in products:
+                if product not in self.data[store_name]:
+                    self.data[store_name].append(product)
             self.save_all_data()
             return True
         return False
@@ -938,12 +950,12 @@ def update_all_prices(stock_manager):
         'PRAN PUFFED RICE 400G': 2.75,
         
         # Other products
-        'PRAN CREAMER 500GM': 2.75,
-        'PRAN CREAMER 500GM EASY OPEN': 2.92,
-        'PRAN CHOCO STICK': 0.70,
-        'PRAN SWEETENED CREAMER 500GM': 2.75,
-        'BOMBAY BRIYANI MASALA': 2.92,
-        'PRAN POTATA BISCUITS 100GM': 1.60,
+        'PRAN CREAMER 500GM': 5.00,
+        'PRAN CREAMER 500GM EASY OPEN': 5.00,
+        'PRAN CHOCO STICK': 3.00,
+        'PRAN SWEETENED CREAMER 500GM': 5.00,
+        'BOMBAY BRIYANI MASALA': 4.50,
+        'PRAN POTATA BISCUITS 100GM': 3.50,
     }
     
     updated_count = 0
@@ -958,8 +970,102 @@ def update_all_prices(stock_manager):
     st.success(f"✅ Updated prices for {updated_count} products!")
     st.rerun()
 
+def add_products_stores(stock_manager):
+    st.header("➕ Add Products & Stores")
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["Add Product", "Add Store", "Add Products to Store", "Manage Barcodes"])
+    
+    with tab1:
+        st.subheader("Add New Product")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            new_product_name = st.text_input("Product Name")
+            product_price = st.number_input("Price (RM)", min_value=0.0, value=3.0, step=0.1)
+        with col2:
+            barcode = st.text_input("Barcode (Optional)")
+            available_stores = st.multiselect("Available in Stores", list(stock_manager.data.keys()))
+            supplier = st.selectbox("Supplier", ["PINNACLE FOODS (M) SDN BHD", "PRAN", "BARBICAN", "DRINKO", "OTHER"])
+        
+        # Category selection
+        all_categories = sorted(list(set(stock_manager.product_categories.values())))
+        category = st.selectbox("Category", all_categories + ["Auto-detect from name"])
+        
+        if st.button("Add Product"):
+            if new_product_name and available_stores:
+                final_category = None if category == "Auto-detect from name" else category
+                stock_manager.add_product(new_product_name, available_stores, product_price, barcode, supplier, final_category)
+                st.success(f"✅ Product '{new_product_name}' added successfully!")
+                st.rerun()  # Refresh to show the new product immediately
+            else:
+                st.error("❌ Please enter product name and select at least one store.")
+    
+    with tab2:
+        st.subheader("Add New Store/Branch")
+        
+        new_store_name = st.text_input("Store Name")
+        
+        # Option to add initial products to the new store
+        st.subheader("Add Initial Products to New Store (Optional)")
+        available_products = stock_manager.all_products
+        initial_products = st.multiselect("Select products to add to the new store", available_products)
+        
+        if st.button("Add Store"):
+            if new_store_name:
+                if stock_manager.add_store(new_store_name, initial_products):
+                    if initial_products:
+                        st.success(f"✅ Store '{new_store_name}' added successfully with {len(initial_products)} products!")
+                    else:
+                        st.success(f"✅ Store '{new_store_name}' added successfully!")
+                    st.rerun()  # Refresh to show the new store immediately
+                else:
+                    st.error("❌ Store already exists!")
+            else:
+                st.error("❌ Please enter a store name.")
+    
+    with tab3:
+        st.subheader("Add Products to Existing Store")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_store = st.selectbox("Select Store", list(stock_manager.data.keys()))
+        with col2:
+            # Show current products in the store
+            current_products = stock_manager.data.get(selected_store, [])
+            st.write(f"**Current products in {selected_store}:** {len(current_products)}")
+        
+        # Get products not currently in the store
+        all_products = stock_manager.all_products
+        store_products = stock_manager.data.get(selected_store, [])
+        available_products = [p for p in all_products if p not in store_products]
+        
+        products_to_add = st.multiselect("Select products to add", available_products)
+        
+        if st.button("Add Products to Store"):
+            if selected_store and products_to_add:
+                if stock_manager.add_products_to_store(selected_store, products_to_add):
+                    st.success(f"✅ Added {len(products_to_add)} products to {selected_store}!")
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to add products to store")
+            else:
+                st.warning("⚠️ Please select a store and at least one product")
+    
+    with tab4:
+        st.subheader("Manage Product Barcodes")
+        
+        selected_product = st.selectbox("Select Product", stock_manager.all_products)
+        current_barcode = stock_manager.product_barcodes.get(selected_product, "")
+        new_barcode = st.text_input("Barcode", value=current_barcode)
+        
+        if st.button("Update Barcode"):
+            if selected_product and new_barcode:
+                stock_manager.product_barcodes[selected_product] = new_barcode
+                stock_manager.save_all_data()
+                st.success(f"✅ Barcode updated for '{selected_product}'")
+
 # [Rest of the functions remain the same - show_dashboard, check_stock, find_locations, store_inventory, 
-# all_products, add_products_stores, edit_merge_products, manage_prices, generate_po, generate_po_document]
+# all_products, edit_merge_products, manage_prices, generate_po, generate_po_document]
 
 def show_dashboard(stock_manager):
     st.header("📊 Dashboard Overview")
@@ -1186,64 +1292,6 @@ def all_products(stock_manager):
                         <small>Barcode: {barcode}</small>
                     </div>
                     ''', unsafe_allow_html=True)
-
-def add_products_stores(stock_manager):
-    st.header("➕ Add Products & Stores")
-    
-    tab1, tab2, tab3 = st.tabs(["Add Product", "Add Store", "Manage Barcodes"])
-    
-    with tab1:
-        st.subheader("Add New Product")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            new_product_name = st.text_input("Product Name")
-            product_price = st.number_input("Price (RM)", min_value=0.0, value=3.0, step=0.1)
-        with col2:
-            barcode = st.text_input("Barcode (Optional)")
-            available_stores = st.multiselect("Available in Stores", list(stock_manager.data.keys()))
-            supplier = st.selectbox("Supplier", ["PINNACLE FOODS (M) SDN BHD", "PRAN", "BARBICAN", "DRINKO", "OTHER"])
-        
-        # Category selection
-        all_categories = sorted(list(set(stock_manager.product_categories.values())))
-        category = st.selectbox("Category", all_categories + ["Auto-detect from name"])
-        
-        if st.button("Add Product"):
-            if new_product_name and available_stores:
-                final_category = None if category == "Auto-detect from name" else category
-                stock_manager.add_product(new_product_name, available_stores, product_price, barcode, supplier, final_category)
-                st.success(f"✅ Product '{new_product_name}' added successfully!")
-                st.rerun()  # Refresh to show the new product immediately
-            else:
-                st.error("❌ Please enter product name and select at least one store.")
-    
-    with tab2:
-        st.subheader("Add New Store/Branch")
-        
-        new_store_name = st.text_input("Store Name")
-        
-        if st.button("Add Store"):
-            if new_store_name:
-                if stock_manager.add_store(new_store_name):
-                    st.success(f"✅ Store '{new_store_name}' added successfully!")
-                    st.rerun()  # Refresh to show the new store immediately
-                else:
-                    st.error("❌ Store already exists!")
-            else:
-                st.error("❌ Please enter a store name.")
-    
-    with tab3:
-        st.subheader("Manage Product Barcodes")
-        
-        selected_product = st.selectbox("Select Product", stock_manager.all_products)
-        current_barcode = stock_manager.product_barcodes.get(selected_product, "")
-        new_barcode = st.text_input("Barcode", value=current_barcode)
-        
-        if st.button("Update Barcode"):
-            if selected_product and new_barcode:
-                stock_manager.product_barcodes[selected_product] = new_barcode
-                stock_manager.save_all_data()
-                st.success(f"✅ Barcode updated for '{selected_product}'")
 
 def edit_merge_products(stock_manager):
     st.header("✏️ Edit & Merge Products")
